@@ -4,3 +4,10 @@
 *.ptx
 *.cubin
 *.fatbin
+
+__pycache__/
+build/
+*.egg-info/
+
+.vscode/
+profiling/
