@@ -12,7 +12,11 @@ def compute_row_ptrs(tensor_ptr, row_stride, row_index, col_offsets):
     # assume col_stride is 1
     return row_ptr + col_offsets
 
-
+@triton.jit
+def _get_row(tensor_ptr, row_index, row_stride, col_index, col_offsets, n_cols, other):
+    row_ptr = tensor_ptr + row_index * row_stride
+    mask = (col_index + col_offsets) < n_cols
+    return tl.load(row_ptr + col_index + col_offsets, mask=mask, other=other, cache_modifier=".ca")
 
 
 @triton.jit
@@ -133,7 +137,7 @@ def triton_online_softmax_v2(x: torch.Tensor) -> torch.Tensor:
     kernel_online_softmax_v2[(n_rows,)](
         x, x.stride(0),
         out, out.stride(0),
-        n_rows, n_cols,
+        n_rows, n_cols=n_cols,
         block_size=block_size,
         num_warps=num_warps,
     )
