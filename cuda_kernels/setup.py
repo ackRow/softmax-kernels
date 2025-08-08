@@ -1,7 +1,7 @@
 from setuptools import setup
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 # Define the C++ extension modules
 ext_modules = [
@@ -9,7 +9,8 @@ ext_modules = [
         name='cuda_softmax_kernel',
         sources=[
             'binding.cpp',
-            'kernel.cu',
+            'kernel_article1.cu',
+            'kernel_article2.cu',
         ],
         extra_compile_args={
             'cxx': [

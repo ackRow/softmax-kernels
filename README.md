@@ -1,22 +1,42 @@
 # softmax-kernels
 GPU kernel optimization: Softmax
 
-## Part 1: First CUDA implementation
+![Performance plot](./images/benchmark.gif)
 
-[Link to the post](https://medium.com/@hugo.rosenkranz/gpu-kernel-optimization-softmax-part-1-8ff80766cc95)
+## Usage
 
-* Benchmark implementation
+> The following code was tested using the docker image: `nvidia/cuda:12.4.0-devel-ubuntu22.04` on a Geforce RTX 2070
 
-![Performance plot](./article_1/images/softmax_performances.png)
+* Build Python library with CUDA bindings
 
-## Part 2: Beating Triton
+```bash
+cd cuda
+pip install .
+```
 
-WIP
+* Test both implementations against Pytorch baseline
 
-## Part 3: Online Softmax
+```bash
+python3 assertions.py
+```
 
-WIP
+* Run a benchmark
 
-## Expected results
+```bash
+python3 benchmark.py
+```
 
-![Performance plot](./benchmark.gif)
+* Profile both implementations
+
+```bash
+ncu --set full [-o output_path] python3 -O assertions.py
+```
+
+## Articles
+
+* [Part 1: First CUDA implementation](https://medium.com/@hugo.rosenkranz/gpu-kernel-optimization-softmax-part-1-8ff80766cc95)
+
+* Part 2: Beating Triton: WIP
+
+* Part 3: Online Softmax: WIP
+

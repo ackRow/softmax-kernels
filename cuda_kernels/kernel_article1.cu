@@ -2,6 +2,7 @@
 #include <torch/extension.h>
 
 #include "utils/float4.cuh"
+#include "utils/exceptions.h"
 #include "utils/reduce.cuh"
 
 #define MAX_GRID_SIZE 0xFFFF
@@ -48,8 +49,8 @@ torch::Tensor softmax_cuda_v1(torch::Tensor in)
     const int n_rows = in.size(0);
     const int n_cols = in.size(1);
 
-    assert(n_cols % 4 == 0); // Assume the input is fully transformable to float4 for simplicity
-    assert(n_cols <= 4 * MAX_BLOCK_SIZE); // This implementation expects an entire row to fit in a single block
+    PY_ASSERT(n_cols % 4 == 0); // Assume the input is fully transformable to float4 for simplicity
+    PY_ASSERT(n_cols <= 4 * MAX_BLOCK_SIZE); // This implementation expects an entire row to fit in a single block
 
     auto out = torch::empty_like(in);
 
