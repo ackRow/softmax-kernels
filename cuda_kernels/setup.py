@@ -26,7 +26,7 @@ ext_modules = [
                 '-use_fast_math',
                 '-lineinfo',
                 '-Xptxas=-v',
-                '-maxrregcount=64',
+                '-maxrregcount=128',
                 '-arch=sm_75'
             ]
         }

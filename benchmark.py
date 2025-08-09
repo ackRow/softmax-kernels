@@ -16,12 +16,14 @@ configs = [
                 "torch",
                 "triton_tutorial",
                 "cuda_multi_block_v1",
+                "cuda_multi_block_v2",
                 # "triton_multi_block",
             ],
             line_names=[
                 "Torch",
                 "Triton v1 (tutorial)",
                 "Cuda multi-block v1 (mine)",
+                "Cuda multi-block v2 (mine)",
                 # "Triton multi-block (mine)",
             ],
             ylabel="TFLOPS",
@@ -48,10 +50,12 @@ def benchmark(N: int, provider: str, quantiles: list[float] = [0.5, 0.2, 0.8]):
             return lambda: triton_fused_softmax(x)
         elif provider == "cuda_v1":
             return lambda: cuda_softmax_kernel.softmax_cuda_v1(x)
-        elif provider == "triton_multi_block":
-            return lambda: triton_softmax_v2(x)
         elif provider == "cuda_multi_block_v1":
             return lambda: cuda_softmax_kernel.softmax_cuda_multi_block_v1(x)
+        elif provider == "cuda_multi_block_v2":
+            return lambda: cuda_softmax_kernel.softmax_cuda_multi_block_v2(x)
+        elif provider == "triton_multi_block":
+            return lambda: triton_softmax_v2(x)
         else:
             raise KeyError(f"Unknown provider {provider!r}.")
     

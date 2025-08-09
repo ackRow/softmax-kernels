@@ -1,13 +1,10 @@
 #include <assert.h>
 #include <torch/extension.h>
 
+#include "utils/constants.h"
 #include "utils/float4.cuh"
 #include "utils/exceptions.h"
 #include "utils/reduce.cuh"
-
-#define MAX_GRID_SIZE 0xFFFF
-#define MAX_BLOCK_SIZE 1024
-#define CEIL_DIV(x,y) (((x) + (y) - 1) / (y))
 
 
 template <typename T>

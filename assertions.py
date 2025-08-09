@@ -26,3 +26,6 @@ assert torch.allclose(triton_result, expected_result)
 
 cuda_result = cuda_softmax_kernel.softmax_cuda_multi_block_v1(x)
 assert torch.allclose(cuda_result, expected_result)
+
+cuda_result2 = cuda_softmax_kernel.softmax_cuda_multi_block_v2(x)
+assert torch.allclose(cuda_result2, expected_result)

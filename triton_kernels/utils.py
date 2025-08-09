@@ -10,11 +10,11 @@ def calculate_settings(n) -> tuple[int, int]:
     BLOCK_SIZE = triton.next_power_of_2(min(n, MAX_FUSED_SIZE))
 
     num_warps = 4
-    if BLOCK_SIZE >= 2**15:
+    if n >= 2**16:
         num_warps = 32
-    elif BLOCK_SIZE >= 2**13:
+    elif n >= 2**13:
         num_warps = 16
-    elif BLOCK_SIZE >= 2**11:
+    elif n >= 2**11:
         num_warps = 8
     return BLOCK_SIZE, num_warps
 
