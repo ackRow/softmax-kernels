@@ -1,7 +1,7 @@
 from setuptools import setup
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 # Define the C++ extension modules
 ext_modules = [

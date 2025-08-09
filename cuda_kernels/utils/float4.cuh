@@ -26,3 +26,7 @@ __device__ __forceinline__ float4 divide_float4(float4 v, float denominator) {
                        v.z / denominator,
                        v.w / denominator);
 }
+
+__device__ __forceinline__ float4 full_float4(float v) {
+    return make_float4(v, v, v, v);
+}

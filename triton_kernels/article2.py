@@ -45,11 +45,12 @@ def triton_softmax_v2(x: torch.Tensor) -> torch.Tensor:
     n_rows, n_cols = x.shape
     block_size, num_warps = calculate_settings(n_cols)
 
-    kernel = kernel_softmax_adapt_blocksize[(n_rows,)](
+    kernel_softmax_adapt_blocksize[(n_rows,)](
         x, x.stride(0),
         out, out.stride(0),
         n_rows, n_cols,
         block_size=block_size,
-        num_warps=num_warps)
+        num_warps=num_warps
+    )
  
     return out
