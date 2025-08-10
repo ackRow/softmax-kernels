@@ -58,7 +58,7 @@ torch::Tensor softmax_cuda_multi_block_v1(torch::Tensor in)
     auto out = torch::empty_like(in);
 
     int block_dim_y = std::min(n_cols / 4, MAX_BLOCK_SIZE);
-    int grid_dim_x = std::min(n_rows, MAX_GRID_SIZE); // 1 block is processing at least 1 entire row
+    int grid_dim_x = std::min(n_rows, MAX_GRID_SIZE);
 
     dim3 block_size(1, block_dim_y, 1);
     dim3 grid_size(grid_dim_x, 1, 1);
@@ -81,7 +81,7 @@ softmax_kernel_multi_block_v2(T* __restrict__ input, T* __restrict__ output, int
     constexpr int scaled_max_width = max_n_cols / 4;
     constexpr int n_values = CEIL_DIV(scaled_max_width, block_size);
 
-    __shared__ float reduction[WARP_SIZE];
+    __shared__ float reduction[num_warps];
 
     const int scaled_width = n_cols / 4;
     const int thread_index = threadIdx.y;
@@ -138,7 +138,7 @@ torch::Tensor launch_softmax_cuda_multi_block_v2(torch::Tensor in)
     auto out = torch::empty_like(in);
 
     constexpr int block_dim_y = num_warps * WARP_SIZE;
-    int grid_dim_x = std::min(n_rows, MAX_GRID_SIZE); // 1 block is processing at least 1 entire row
+    int grid_dim_x = std::min(n_rows, MAX_GRID_SIZE);
 
     dim3 block_size(1, block_dim_y, 1);
     dim3 grid_size(grid_dim_x, 1, 1);

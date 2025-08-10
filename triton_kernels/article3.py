@@ -2,6 +2,7 @@ import triton
 import triton.language as tl
 import torch
 
+from .article1 import kernel_fused_softmax_baseline
 from .utils import calculate_settings, compute_row_ptrs, get_row
 
 
@@ -32,54 +33,9 @@ def online_softmax_divisor_update(a, b):
     div_out = div_a * tl.exp(max_a - max_out) + div_b * tl.exp(max_b - max_out)
     return bitcast_merge(max_out, div_out)
 
-@triton.jit
-def kernel_online_softmax(
-    x_ptr, x_row_stride: int,
-    out_ptr, out_row_stride: int,
-    n_rows: int, n_cols: int,
-    block_size: tl.constexpr,
-):
-    # might handle multiple rows if the number of rows is high
-    pid = tl.program_id(0)  # starting row for the given program
-    row_step = tl.num_programs(0)  # rows to skip before the next one to process
-    
-    for row_idx in tl.range(pid, n_rows, step=row_step, num_stages=2):
-        col_offsets = tl.arange(0, block_size)  # block_size is always greater than n_cols
-        mask = col_offsets < n_cols # mask for boundary check
-
-        x_row_ptrs = compute_row_ptrs(x_ptr, x_row_stride, row_idx, col_offsets)
-        row = tl.load(x_row_ptrs, mask=mask, other=float("-inf"))
-        initial_div = tl.full((block_size,), 1.0, dtype=tl.float32)
-        
-        vf = bitcast_merge(row, initial_div)
-        z  = tl.reduce(vf, 0, online_softmax_divisor_update)
-        max, divisor = bitcast_unmerge(z)
-
-        res = tl.exp(row - max)/divisor
-        out_row_ptrs = compute_row_ptrs(out_ptr, out_row_stride, row_idx, col_offsets)
-        tl.store(out_row_ptrs, res, mask=mask)
-    
-
-def triton_online_softmax(x: torch.Tensor) -> torch.Tensor:
-    out = torch.empty_like(x)
-    assert x.is_cuda and x.ndim == 2 and x.is_contiguous()
-
-    n_rows, n_cols = x.shape
-    _, num_warps = calculate_settings(n_cols)
-    block_size = triton.next_power_of_2(n_cols)
-
-    kernel_online_softmax[(n_rows,)](
-        x, x.stride(0),
-        out, out.stride(0),
-        n_rows, n_cols,
-        block_size=block_size,
-        num_warps=num_warps,
-    )
-    
-    return out
 
 @triton.jit
-def kernel_online_softmax_v2(
+def kernel_online_softmax_merge(
     x_ptr, x_row_stride: int,
     out_ptr, out_row_stride: int,
     n_rows: int, n_cols: tl.constexpr,
@@ -103,29 +59,91 @@ def kernel_online_softmax_v2(
             incoming_state  = tl.reduce(row_states, 0, online_softmax_divisor_update)
             current_state = online_softmax_divisor_update(current_state, incoming_state)
         
-        max, divisor = bitcast_unmerge(current_state)
+        maximum, divisor = bitcast_unmerge(current_state)
 
         for col_idx in tl.range(0, n_cols, step=block_size, loop_unroll_factor=0):
             row = get_row(x_ptr, row_idx, x_row_stride, col_idx, col_offsets, n_cols, other=init_max)
-            result = tl.exp(row - max) / divisor
+            result = tl.exp(row - maximum) / divisor
 
             out_row_ptrs = compute_row_ptrs(out_ptr + col_idx, out_row_stride, row_idx, col_offsets)
             tl.store(out_row_ptrs, result, mask=(col_idx + col_offsets) < n_cols, cache_modifier=".cs")
     
 
-def triton_online_softmax_v2(x: torch.Tensor) -> torch.Tensor:
+def triton_online_softmax(x: torch.Tensor) -> torch.Tensor:
     out = torch.empty_like(x)
     assert x.is_cuda and x.ndim == 2 and x.is_contiguous()
 
     n_rows, n_cols = x.shape
     block_size, num_warps = calculate_settings(n_cols)
 
-    kernel_online_softmax_v2[(n_rows,)](
+    kernel_online_softmax_merge[(n_rows,)](
         x, x.stride(0),
         out, out.stride(0),
         n_rows, n_cols=n_cols,
         block_size=block_size,
         num_warps=num_warps,
     )
+    
+    return out
+
+
+@triton.jit
+def kernel_online_softmax_hybrid(
+    x_ptr, x_row_stride: int,
+    out_ptr, out_row_stride: int,
+    n_rows: int, n_cols: int,
+    block_size: tl.constexpr,
+):
+    """Inspired by [Liger kernels](https://github.com/linkedin/Liger-Kernel/blob/main/src/liger_kernel/ops/softmax.py)"""
+    
+    pid = tl.program_id(0)
+    row_step = tl.num_programs(0)
+    col_offsets = tl.arange(0, block_size)
+
+    init_max = float("-inf")
+
+    for row_idx in tl.range(pid, n_rows, step=row_step, num_stages=2):
+        
+        maximum = init_max
+        divisor = 1.0
+        for col_idx in tl.range(0, n_cols, step=block_size):
+            row = get_row(x_ptr, row_idx, x_row_stride, col_idx, col_offsets, n_cols, other=init_max)
+            row_max = max(row_max, tl.max(row, axis=0))
+            new_max = tl.maximum(maximum, row_max)
+
+            divisor = divisor * tl.exp(maximum - new_max) + tl.sum(tl.exp(row - new_max), axis=0)
+            maximum = new_max
+
+        for col_idx in tl.range(0, n_cols, step=block_size):
+            row = get_row(x_ptr, row_idx, x_row_stride, col_idx, col_offsets, n_cols, other=init_max)
+            result = tl.exp(row - maximum) / divisor
+
+            out_row_ptrs = compute_row_ptrs(out_ptr + col_idx, out_row_stride, row_idx, col_offsets)
+            tl.store(out_row_ptrs, result, mask=(col_idx + col_offsets) < n_cols, cache_modifier=".cs")
+    
+
+def triton_online_softmax_hybrid(x: torch.Tensor) -> torch.Tensor:
+    out = torch.empty_like(x)
+    assert x.is_cuda and x.ndim == 2 and x.is_contiguous()
+
+    n_rows, n_cols = x.shape
+    block_size, num_warps = calculate_settings(n_cols)
+
+    if n_cols <= block_size:
+        kernel_fused_softmax_baseline[(n_rows,)](
+            x, x.stride(0),
+            out, out.stride(0),
+            n_rows, n_cols,
+            block_size=block_size,
+            num_warps=num_warps
+        )
+    else:
+        kernel_online_softmax_merge[(n_rows,)](
+            x, x.stride(0),
+            out, out.stride(0),
+            n_rows, n_cols=n_cols,
+            block_size=block_size,
+            num_warps=num_warps,
+        )
     
     return out

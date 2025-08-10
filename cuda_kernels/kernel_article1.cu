@@ -1,4 +1,3 @@
-#include <assert.h>
 #include <torch/extension.h>
 
 #include "utils/constants.h"

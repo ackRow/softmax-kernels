@@ -2,6 +2,7 @@ import triton
 import triton.language as tl
 import torch
 
+from .article1 import kernel_fused_softmax_baseline
 from .utils import calculate_settings, compute_row_ptrs, get_row
 
 
@@ -9,7 +10,7 @@ from .utils import calculate_settings, compute_row_ptrs, get_row
 def kernel_softmax_adapt_blocksize(
     x_ptr, x_row_stride: int,
     out_ptr, out_row_stride: int,
-    n_rows: int, n_cols: tl.constexpr,
+    n_rows: int, n_cols,
     block_size: tl.constexpr,
 ):
     # might handle multiple rows if the number of rows is high
@@ -21,16 +22,16 @@ def kernel_softmax_adapt_blocksize(
     
     for row_idx in tl.range(pid, n_rows, step=row_step, num_stages=2):
         row_max = init_max
-        for col_idx in tl.range(0, n_cols, step=block_size, loop_unroll_factor=0):
+        for col_idx in tl.range(0, n_cols, step=block_size):
             row = get_row(x_ptr, row_idx, x_row_stride, col_idx, col_offsets, n_cols, other=init_max)
             row_max = max(row_max, tl.max(row, axis=0))
 
         exp_sum = 0.
-        for col_idx in tl.range(0, n_cols, step=block_size, loop_unroll_factor=0):
+        for col_idx in tl.range(0, n_cols, step=block_size):
             row = get_row(x_ptr, row_idx, x_row_stride, col_idx, col_offsets, n_cols, other=init_max)
             exp_sum += tl.sum(tl.exp(row - row_max), axis=0)
         
-        for col_idx in tl.range(0, n_cols, step=block_size, loop_unroll_factor=0):
+        for col_idx in tl.range(0, n_cols, step=block_size):
             row = get_row(x_ptr, row_idx, x_row_stride, col_idx, col_offsets, n_cols, other=init_max)
             result = tl.exp(row - row_max) / exp_sum
 
@@ -45,12 +46,21 @@ def triton_softmax_v2(x: torch.Tensor) -> torch.Tensor:
     n_rows, n_cols = x.shape
     block_size, num_warps = calculate_settings(n_cols)
 
-    kernel_softmax_adapt_blocksize[(n_rows,)](
-        x, x.stride(0),
-        out, out.stride(0),
-        n_rows, n_cols,
-        block_size=block_size,
-        num_warps=num_warps
-    )
+    if n_cols <= block_size:
+        kernel_fused_softmax_baseline[(n_rows,)](
+            x, x.stride(0),
+            out, out.stride(0),
+            n_rows, n_cols,
+            block_size=block_size,
+            num_warps=num_warps
+        )
+    else:
+        kernel_softmax_adapt_blocksize[(n_rows,)](
+            x, x.stride(0),
+            out, out.stride(0),
+            n_rows, n_cols,
+            block_size=block_size,
+            num_warps=num_warps
+        )
  
     return out

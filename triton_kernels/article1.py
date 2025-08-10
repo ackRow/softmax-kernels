@@ -21,7 +21,7 @@ def compute_row_ptrs(tensor_ptr, row_stride, row_index, col_offsets):
     return row_ptr + col_offsets
 
 @triton.jit
-def kernel_fused_softmax(
+def kernel_fused_softmax_baseline(
     x_ptr, x_row_stride: int,
     out_ptr, out_row_stride: int,
     n_rows: int, n_cols: int,
@@ -61,7 +61,7 @@ def triton_fused_softmax(x: torch.Tensor) -> torch.Tensor:
         num_warps = 16
 
     # pre-compile kernel to get register usage and compute thread occupancy.
-    kernel = kernel_fused_softmax.warmup(
+    kernel = kernel_fused_softmax_baseline.warmup(
         x, x.stride(0),
         out, out.stride(0),
         n_rows, n_cols,

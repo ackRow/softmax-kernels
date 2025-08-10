@@ -6,11 +6,12 @@ import matplotlib.pyplot as plt
 import cuda_softmax_kernel
 from triton_kernels.article1 import triton_fused_softmax
 from triton_kernels.article2 import triton_softmax_v2
+from triton_kernels.article3 import triton_online_softmax, triton_online_softmax_hybrid
 
 configs = [
     triton.testing.Benchmark(
             x_names=["N"],
-            x_vals=[2 ** i for i in range(8, 20)],
+            x_vals=[2 ** i for i in range(10, 22)],
             line_arg="provider",
             line_vals=[
                 "torch",
@@ -18,6 +19,9 @@ configs = [
                 "cuda_multi_block_v1",
                 "cuda_multi_block_v2",
                 "triton_multi_block",
+                "cuda_online_v1",
+                "triton_online",
+                "triton_online_hybrid"
             ],
             line_names=[
                 "Torch",
@@ -25,6 +29,9 @@ configs = [
                 "Cuda multi-block v1 (mine)",
                 "Cuda multi-block v2 (mine)",
                 "Triton multi-block (mine)",
+                "Cuda online v1 (mine)",
+                "Triton online (mine)",
+                "Triton online hybrid (Liger Kernel)"
             ],
             ylabel="TFLOPS",
             plot_name="softmax-performance",
@@ -56,6 +63,12 @@ def benchmark(N: int, provider: str, quantiles: list[float] = [0.5, 0.2, 0.8]):
             return lambda: cuda_softmax_kernel.softmax_cuda_multi_block_v2(x)
         elif provider == "triton_multi_block":
             return lambda: triton_softmax_v2(x)
+        elif provider == "cuda_online_v1":
+            return lambda: cuda_softmax_kernel.softmax_cuda_online_v1(x)
+        elif provider == "triton_online":
+            return lambda: triton_online_softmax(x)
+        elif provider == "triton_online_hybrid":
+            return lambda: triton_online_softmax_hybrid(x)
         else:
             raise KeyError(f"Unknown provider {provider!r}.")
     
