@@ -11,25 +11,27 @@ from triton_kernels.article3 import triton_online_softmax, triton_online_softmax
 configs = [
     triton.testing.Benchmark(
             x_names=["N"],
-            x_vals=[2 ** i for i in range(10, 22)],
+            x_vals=[2 ** i for i in range(10, 21)],
             line_arg="provider",
             line_vals=[
-                "torch",
-                "triton_tutorial",
-                "cuda_multi_block_v1",
+                # "torch",
+                # "triton_tutorial",
+                # "cuda_multi_block_v1",
                 "cuda_multi_block_v2",
                 "triton_multi_block",
                 "cuda_online_v1",
+                "cuda_online_v2",
                 "triton_online",
                 "triton_online_hybrid"
             ],
             line_names=[
-                "Torch",
-                "Triton v1 (tutorial)",
-                "Cuda multi-block v1 (mine)",
+                # "Torch",
+                # "Triton v1 (tutorial)",
+                # "Cuda multi-block v1 (mine)",
                 "Cuda multi-block v2 (mine)",
                 "Triton multi-block (mine)",
                 "Cuda online v1 (mine)",
+                "Cuda online v2 (mine)",
                 "Triton online (mine)",
                 "Triton online hybrid (Liger Kernel)"
             ],
@@ -65,6 +67,8 @@ def benchmark(N: int, provider: str, quantiles: list[float] = [0.5, 0.2, 0.8]):
             return lambda: triton_softmax_v2(x)
         elif provider == "cuda_online_v1":
             return lambda: cuda_softmax_kernel.softmax_cuda_online_v1(x)
+        elif provider == "cuda_online_v2":
+            return lambda: cuda_softmax_kernel.softmax_cuda_online_v2(x)
         elif provider == "triton_online":
             return lambda: triton_online_softmax(x)
         elif provider == "triton_online_hybrid":
