@@ -7,31 +7,11 @@ from .utils import calculate_settings, compute_row_ptrs, get_row
 
 
 @triton.jit
-def bitcast_unmerge(merged):
-    tl.static_assert(merged.dtype == tl.int64)
-    b = (merged & 0xFFFFFFFF).to(tl.int32).to(tl.float32, bitcast=True)
-    a = (merged >> 32).to(tl.int32).to(tl.float32, bitcast=True)  # shifted by 32 bits
-    return a, b
-
-
-@triton.jit
-def bitcast_merge(a, b):
-    tl.static_assert(a.dtype == tl.float32)
-    tl.static_assert(b.dtype == tl.float32)
-    a = a.to(dtype=tl.int32, bitcast=True).to(tl.int64)  # directly converted to int32
-    a = a << 32  # shifted by 32 bits
-    b = b.to(dtype=tl.int32, bitcast=True).to(tl.int64)  # directly converted to int32
-    return a | b
-
-@triton.jit
-def online_softmax_divisor_update(a, b):
-    max_a, div_a = bitcast_unmerge(a)
-    max_b, div_b = bitcast_unmerge(b)
-
+def online_softmax_divisor_update(max_a, div_a, max_b, div_b):
     max_out = tl.maximum(max_a, max_b)
 
     div_out = div_a * tl.exp(max_a - max_out) + div_b * tl.exp(max_b - max_out)
-    return bitcast_merge(max_out, div_out)
+    return max_out, div_out
 
 
 @triton.jit
@@ -52,21 +32,19 @@ def kernel_online_softmax_merge(
 
     for row_idx in tl.range(pid, n_rows, step=row_step, num_stages=2):
         
-        current_state = bitcast_merge(init_max, init_divisor)
+        maximum, divisor = init_max, init_divisor
         for col_idx in tl.range(0, n_cols, step=block_size, loop_unroll_factor=0):
             row = get_row(x_ptr, row_idx, x_row_stride, col_idx, col_offsets, n_cols, other=init_max)
-            row_states = bitcast_merge(row, init_divisors)
-            incoming_state  = tl.reduce(row_states, 0, online_softmax_divisor_update)
-            current_state = online_softmax_divisor_update(current_state, incoming_state)
-        
-        maximum, divisor = bitcast_unmerge(current_state)
+            incoming_max, incoming_div  = tl.reduce((row, init_divisors), 0, online_softmax_divisor_update)
+            maximum, divisor = online_softmax_divisor_update(maximum, divisor, incoming_max, incoming_div)
+
 
         for col_idx in tl.range(0, n_cols, step=block_size, loop_unroll_factor=0):
             row = get_row(x_ptr, row_idx, x_row_stride, col_idx, col_offsets, n_cols, other=init_max)
             result = tl.exp(row - maximum) / divisor
 
             out_row_ptrs = compute_row_ptrs(out_ptr + col_idx, out_row_stride, row_idx, col_offsets)
-            tl.store(out_row_ptrs, result, mask=(col_idx + col_offsets) < n_cols, cache_modifier=".cs")
+            tl.store(out_row_ptrs, result, mask=(col_idx + col_offsets) < n_cols)
     
 
 def triton_online_softmax(x: torch.Tensor) -> torch.Tensor:
@@ -108,9 +86,8 @@ def kernel_online_softmax_hybrid(
         divisor = 1.0
         for col_idx in tl.range(0, n_cols, step=block_size):
             row = get_row(x_ptr, row_idx, x_row_stride, col_idx, col_offsets, n_cols, other=init_max)
-            row_max = max(row_max, tl.max(row, axis=0))
-            new_max = tl.maximum(maximum, row_max)
-
+            new_max = tl.maximum(maximum, tl.max(row, axis=0))
+            # online divisor update
             divisor = divisor * tl.exp(maximum - new_max) + tl.sum(tl.exp(row - new_max), axis=0)
             maximum = new_max
 
@@ -119,7 +96,7 @@ def kernel_online_softmax_hybrid(
             result = tl.exp(row - maximum) / divisor
 
             out_row_ptrs = compute_row_ptrs(out_ptr + col_idx, out_row_stride, row_idx, col_offsets)
-            tl.store(out_row_ptrs, result, mask=(col_idx + col_offsets) < n_cols, cache_modifier=".cs")
+            tl.store(out_row_ptrs, result, mask=(col_idx + col_offsets) < n_cols)
     
 
 def triton_online_softmax_hybrid(x: torch.Tensor) -> torch.Tensor:
@@ -138,7 +115,7 @@ def triton_online_softmax_hybrid(x: torch.Tensor) -> torch.Tensor:
             num_warps=num_warps
         )
     else:
-        kernel_online_softmax_merge[(n_rows,)](
+        kernel_online_softmax_hybrid[(n_rows,)](
             x, x.stride(0),
             out, out.stride(0),
             n_rows, n_cols=n_cols,
